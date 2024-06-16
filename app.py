@@ -2,7 +2,7 @@ import os
 import base64
 import re
 import json
-
+import time
 import streamlit as st
 import openai
 from openai import AssistantEventHandler
@@ -52,6 +52,12 @@ if azure_openai_endpoint and azure_openai_key:
         api_version="2024-02-15-preview",
         azure_endpoint=azure_openai_endpoint,
     )
+    assistant = client.beta.assistants.create(
+    instructions="Приложенные текстовые файлы содержат три категории информации:технопарки , их инженерные коммуникации, адреса, координаты, список видов деятельности, льготы, стоимости аренды и другую полезную информацию.здания и сооружения их инженерные коммуникации, адреса, координаты, список видов деятельности, стоимости аренды или продажи и другую полезную информацию. меры поддержки инвесторов, ввиде льгот, субсидий, по видам деятельности, условиям получения, сути мер поддержки и другую полезную информацию.Пользователь который будет общаться потенциальный инвестор.Задача обработать все файлы , задавая уточняющие вопросы , помочь пользователю найти наиболее подходящюю бизнес модель, предложить для создания производства подходящий технопарк или здание , и исходя из проекта подсказать какие льготы и преференции может получить данный инвестор",
+    model="gpt4", # replace with model deployment name. 
+    tools=[{"type":"code_interpreter"}]
+    )
+
 else:
     client = openai.OpenAI(api_key=openai_api_key)
 
@@ -174,15 +180,31 @@ def create_thread(content, file):
 
 
 def create_message(thread, content, file):
-    attachments = []
-    if file is not None:
-        attachments.append(
-            {"file_id": file.id, "tools": [{"type": "code_interpreter"}]}
-        )
-    client.beta.threads.messages.create(
-        thread_id=thread.id, role="user", content=content, attachments=attachments
+    message = client.beta.threads.messages.create(
+        thread_id=thread.id,
+        role="user",
+        content=content # Replace this with your prompt
     )
 
+    # Run the thread
+    run = client.beta.threads.runs.create(
+    thread_id=thread.id,
+    assistant_id=assistant.id
+    )
+
+    # Looping until the run completes or fails
+    while run.status in ['queued', 'in_progress', 'cancelling']:
+        time.sleep(1)
+        run = client.beta.threads.runs.retrieve(
+            thread_id=thread.id,
+            run_id=run.id
+        )
+
+    if run.status == 'completed':
+        messages = client.beta.threads.messages.list(
+        thread_id=thread.id
+    )
+    print(messages)
 
 def create_file_link(file_name, file_id):
     content = client.files.content(file_id)
